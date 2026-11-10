@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Space (Assemblage all productions in one space)</title>
+    <!-- Tailwind CSS for UI Controls -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- WebM Writer Library -->
+    <script src="https://coder4qwert.github.io/motion/lib/webm-writer-0.3.0.js"></script>
+    <!-- Three.js Core Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- GLTFLoader for 3D Models (.glb / .gltf) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- OrbitControls for Manual Camera Control -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- TransformControls for Interactive 3D Gizmos/Arrows -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b1329;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #ffffff;
+        }
+
+        #viewport-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+        }
+
+        #canvas-container {
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            transition: width 0.3s ease, height 0.3s ease;
+            overflow: hidden;
+        }
+
+        /* Safe Area Overlay Box */
+        #camera-guide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            border: 2px dashed rgba(245, 158, 11, 0.8);
+            box-sizing: border-box;
+            z-index: 5;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 8px;
+        }
+
+        #camera-guide::before {
+            content: 'حدود الكاميرا المباشرة (Safe Area)';
+            font-size: 11px;
+            background: rgba(245, 158, 11, 0.85);
+            color: #000;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+
+        .tab-active {
+            border-bottom: 2px solid #f59e0b;
+            color: #fbbf24;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Application Viewport -->
+    <div id="viewport-wrapper">
+        <!-- Render Canvas Container -->
+        <div id="canvas-container">
+            <div id="camera-guide"></div>
+        </div>
+    </div>
+
+    <!-- UI Control Panel Overlay (Multi-Tab Controls) -->
+    <div class="fixed top-4 right-4 z-20 w-88 max-h-[92vh] bg-slate-900/95 backdrop-blur-md p-4 rounded-2xl border border-slate-700/60 shadow-2xl flex flex-col justify-between space-y-3 overflow-y-auto">
+        <div>
+            <!-- Header & Tabs -->
+            <div class="border-b border-slate-700/80 pb-2 mb-3">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-sm font-bold text-amber-400 flex items-center gap-1.5">
+                       Pixel Space - Assemblage
+                    </h2>
+                    <span id="fps-badge" class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">30 FPS</span>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <div class="flex gap-2 text-xs border-b border-slate-800">
+                    <button onclick="switchTab('tab-sprites')" id="tab-btn-sprites" class="pb-1 px-1 tab-active text-amber-400">العناصر (صور / GLB)</button>
+                    <button onclick="switchTab('tab-camera')" id="tab-btn-camera" class="pb-1 px-1 text-slate-400 hover:text-amber-400">لقطات الكاميرا</button>
+                    <button onclick="switchTab('tab-render')" id="tab-btn-render" class="pb-1 px-1 text-slate-400 hover:text-amber-400">الإعدادات والرندر</button>
+                </div>
+            </div>
+
+            <!-- TAB 1: MESH PLANES & GLB MANAGEMENT -->
+            <div id="tab-sprites" class="space-y-3">
+                <div class="space-y-2">
+                    <label class="text-xs text-slate-300 font-medium block">إضافة عنصر جديد:</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="text-[10px] text-amber-400 font-bold block mb-1">🖼️ صورة:</label>
+                            <input type="file" id="sprite-upload" accept="image/*" onchange="addNewSpriteFromFile(event)" class="w-full text-[10px] text-slate-400 bg-slate-800 p-1 rounded border border-slate-700 file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-amber-500 file:text-slate-950 font-semibold cursor-pointer">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-sky-400 font-bold block mb-1">📦 مجسم (GLB / GLTF):</label>
+                            <input type="file" id="glb-upload" accept=".glb,.gltf" onchange="addNewGLBFromFile(event)" class="w-full text-[10px] text-slate-400 bg-slate-800 p-1 rounded border border-slate-700 file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-sky-500 file:text-slate-950 font-semibold cursor-pointer">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-emerald-400 font-bold block mb-1">🎞️ فيديو WebM:</label>
+                            <input type="file" id="webm-upload" accept="video/webm,.webm" onchange="addNewVideoFromFile(event)" class="w-full text-[10px] text-slate-400 bg-slate-800 p-1 rounded border border-slate-700 file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-emerald-500 file:text-slate-950 font-semibold cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mode Controls for Transform Gizmo -->
+                <div class="bg-slate-800/80 p-2 rounded-xl border border-slate-700 space-y-1.5">
+                    <span class="text-[11px] text-amber-400 font-bold block">نمط أسهم التحكم بالماوس (Gizmo):</span>
+                    <div class="grid grid-cols-3 gap-1">
+                        <button onclick="setGizmoMode('translate')" id="gizmo-btn-translate" class="gizmo-mode-btn bg-amber-500 text-slate-950 font-bold py-1 text-[11px] rounded-lg transition-all">
+                            ↖ تحريك
+                        </button>
+                        <button onclick="setGizmoMode('rotate')" id="gizmo-btn-rotate" class="gizmo-mode-btn bg-slate-900 text-slate-300 hover:bg-slate-700 py-1 text-[11px] rounded-lg transition-all border border-slate-700">
+                            🔄 تدوير
+                        </button>
+                        <button onclick="setGizmoMode('scale')" id="gizmo-btn-scale" class="gizmo-mode-btn bg-slate-900 text-slate-300 hover:bg-slate-700 py-1 text-[11px] rounded-lg transition-all border border-slate-700">
+                            ⤢ تكبير
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Sprites / Models List -->
+                <div class="space-y-2">
+                    <span class="text-xs text-slate-400 block border-b border-slate-800 pb-1">العناصر المضافة في المشهد:</span>
+                    <div id="sprites-list" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        <p class="text-xs text-slate-500 italic text-center py-2">لا توجد عناصر مضافة بعد</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: CAMERA KEYFRAMES SYSTEM -->
+            <div id="tab-camera" class="hidden space-y-3">
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs text-slate-300 font-medium">حفظ موضع الكاميرا الحالي:</label>
+                        <button onclick="captureCurrentCameraKeyframe()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-2 py-1 rounded text-xs font-bold transition-all shadow">
+                            📸 إضافة موضع جديد
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-400">حرك الكاميرا بالماوس نحو العنصر/المجسم المطلوب ثم اضغط إضافة.</p>
+                </div>
+
+                <div class="space-y-2 pt-2 border-t border-slate-800">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-400">مواضع الكاميرا وأزمنة الانتقال:</span>
+                        <span id="total-duration-label" class="text-[10px] text-amber-400 font-bold">المجموع: 0 ثانية</span>
+                    </div>
+                    <div id="keyframes-list" class="space-y-2 max-h-52 overflow-y-auto pr-1">
+                        <!-- Keyframes items populated dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: EXPORT & ASPECT RATIO -->
+            <div id="tab-render" class="hidden space-y-3">
+                <!-- Aspect Ratio Selection -->
+                <div class="space-y-1.5">
+                    <label class="text-xs text-slate-300 font-medium">نسبة العرض إلى الارتفاع (Aspect Ratio):</label>
+                    <div class="grid grid-cols-3 gap-1.5">
+                        <button onclick="setAspectRatio('16:9')" id="btn-16-9" class="ratio-btn bg-amber-500 text-slate-950 font-bold py-1.5 text-xs rounded-lg transition-all shadow">
+                            16:9
+                        </button>
+                        <button onclick="setAspectRatio('9:16')" id="btn-9-16" class="ratio-btn bg-slate-800 text-slate-300 hover:bg-slate-700 py-1.5 text-xs rounded-lg transition-all border border-slate-700">
+                            9:16
+                        </button>
+                        <button onclick="setAspectRatio('1:1')" id="btn-1-1" class="ratio-btn bg-slate-800 text-slate-300 hover:bg-slate-700 py-1.5 text-xs rounded-lg transition-all border border-slate-700">
+                            1:1
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Camera Framing Option -->
+                <div class="space-y-1.5">
+                    <label class="text-xs text-slate-300 font-medium">وضع احتواء العناصر (Camera Fitting):</label>
+                    <select id="fit-mode-select" onchange="updateCameraFitting()" class="w-full bg-slate-800 text-xs text-slate-200 p-2 rounded-lg border border-slate-700 outline-none focus:border-amber-500">
+                        <option value="contain" selected>احتواء كامل (Contain)</option>
+                        <option value="cover">ملء الشاشة (Cover)</option>
+                    </select>
+                </div>
+
+                <!-- Camera Guide Toggle -->
+                <div class="flex items-center justify-between pt-1">
+                    <span class="text-xs text-slate-300">إظهار حدود الكاميرا:</span>
+                    <input type="checkbox" id="toggle-guide" checked onchange="toggleCameraGuide(this.checked)" class="w-4 h-4 accent-amber-500 cursor-pointer">
+                </div>
+            </div>
+        </div>
+
+        <!-- Sequence Playback & Render Controls -->
+        <div class="pt-3 border-t border-slate-700/80 space-y-2">
+            <button onclick="playCameraSequencePreview()" id="preview-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold py-2 rounded-xl border border-amber-500/30 text-xs transition-all flex items-center justify-center gap-2">
+                <span>▶</span> معاينة حركة الكاميرا
+            </button>
+
+            <button onclick="startDeterministicRender()" id="render-btn" class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2">
+                <span>🎥</span> تصدير فيديو المونتاج بدقة HD
+            </button>
+
+            <!-- Progress Bar Overlay -->
+            <div id="render-progress-container" class="hidden space-y-1.5 pt-1">
+                <div class="flex justify-between text-xs text-slate-300">
+                    <span id="render-status-text">جاري رندر الحركة...</span>
+                    <span id="render-percentage" class="text-amber-400 font-mono">0%</span>
+                </div>
+                <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden border border-slate-700">
+                    <div id="render-progress-bar" class="bg-amber-500 h-full w-0 transition-all duration-75"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Studio Logic -->
+    <script>
+        // --- CONFIGURATION & GLOBAL STATE ---
+        const RENDER_FPS = 30;
+        let currentAspect = '16:9';
+        let currentFitMode = 'contain';
+        let isRendering = false;
+        let isSequencePlaying = false;
+        let sequenceStartTime = 0;
+
+        // Base Reference Camera Settings
+        const BASE_FOV = 45;
+        const defaultCamPosition = new THREE.Vector3(0, 0, 25);
+        const defaultCamTarget = new THREE.Vector3(0, 0, 0);
+
+        // --- MESH PLANES (SPRITES), GLB MODELS & KEYFRAMES MANAGERS STATE ---
+        const userSprites = []; // Stores both Image Mesh Planes and GLB Models
+        const cameraKeyframes = []; // Sequence Camera Snapshots
+        const gltfLoader = new THREE.GLTFLoader();
+
+        // UI Tabs Switcher
+        function switchTab(tabId) {
+            document.querySelectorAll('#tab-render, #tab-sprites, #tab-camera').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('#tab-btn-render, #tab-btn-sprites, #tab-btn-camera').forEach(el => el.classList.remove('tab-active', 'text-amber-400'));
+            
+            document.getElementById(tabId).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-btn-${tabId.replace('tab-', '')}`);
+            activeBtn.classList.add('tab-active');
+
+            if (tabId === 'tab-sprites') {
+                renderSpritesUIList();
+            } else if (tabId === 'tab-camera') {
+                renderKeyframesUIList();
+            }
+        }
+
+        // --- THREE.JS SCENE SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(BASE_FOV, 16 / 9, 0.1, 1000);
+        camera.position.copy(defaultCamPosition);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+        renderer.setPixelRatio(1);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        container.appendChild(renderer.domElement);
+
+        // --- ORBIT CONTROLS SETUP ---
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // --- TRANSFORM CONTROLS (GIZMO ARROWS) SETUP ---
+        const transformControls = new THREE.TransformControls(camera, renderer.domElement);
+        scene.add(transformControls);
+
+        // Disable OrbitControls while dragging the Transform Gizmo
+        transformControls.addEventListener('dragging-changed', function (event) {
+            controls.enabled = !event.value;
+        });
+
+        // Sync Transform Gizmo changes back to userSprites data and UI
+        transformControls.addEventListener('change', function () {
+            if (transformControls.object) {
+                const mesh = transformControls.object;
+                const item = userSprites.find(s => s.meshObj === mesh);
+                if (item) {
+                    item.posX = mesh.position.x;
+                    item.posY = mesh.position.y;
+                    item.posZ = mesh.position.z;
+                    item.rotY = mesh.rotation.y;
+
+                    // Enforce Uniform Aspect Ratio Scaling if scaling via Gizmo
+                    if (transformControls.getMode() === 'scale') {
+                        const maxScale = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+                        mesh.scale.set(maxScale, maxScale, item.type === 'glb' ? maxScale : 1);
+                        item.scaleFactor = maxScale;
+                    }
+
+                    updateSpriteUIInputs(item.id);
+                }
+            }
+        });
+
+        function setGizmoMode(mode) {
+            transformControls.setMode(mode);
+            document.querySelectorAll('.gizmo-mode-btn').forEach(btn => {
+                btn.className = "gizmo-mode-btn bg-slate-900 text-slate-300 hover:bg-slate-700 py-1 text-[11px] rounded-lg transition-all border border-slate-700";
+            });
+            const activeBtn = document.getElementById(`gizmo-btn-${mode}`);
+            if (activeBtn) {
+                activeBtn.className = "gizmo-mode-btn bg-amber-500 text-slate-950 font-bold py-1 text-[11px] rounded-lg transition-all";
+            }
+        }
+
+        // Attach Gizmo to clicked Mesh/Model in 3D Scene (Raycasting)
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        renderer.domElement.addEventListener('pointerdown', function (event) {
+            if (transformControls.dragging) return;
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(userSprites.map(s => s.meshObj), true);
+
+            if (intersects.length > 0) {
+                let clickedObj = intersects[0].object;
+                while (clickedObj.parent && clickedObj.parent !== spritesGroup) {
+                    clickedObj = clickedObj.parent;
+                }
+                const item = userSprites.find(s => s.meshObj === clickedObj);
+                if (item) {
+                    transformControls.attach(item.meshObj);
+                    highlightSpriteCard(item.id);
+                }
+            }
+        });
+
+        // Group dedicated to user Mesh Planes and GLB Models
+        const spritesGroup = new THREE.Group();
+        scene.add(spritesGroup);
+
+        // --- STATIC ENVIRONMENT & LIGHTS ---
+        const bgCanvas = document.createElement('canvas');
+        bgCanvas.width = 1024; bgCanvas.height = 1024;
+        const bgCtx = bgCanvas.getContext('2d');
+        const bgGrad = bgCtx.createRadialGradient(512, 512, 50, 512, 512, 750);
+        bgGrad.addColorStop(0, '#38bdf8');
+        bgGrad.addColorStop(0.4, '#0284c7');
+        bgGrad.addColorStop(0.8, '#0369a1');
+        bgGrad.addColorStop(1, '#0c4a6e');
+        bgCtx.fillStyle = bgGrad; bgCtx.fillRect(0, 0, 1024, 1024);
+        
+        const bgGeo = new THREE.SphereGeometry(150, 32, 32);
+        const bgMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(bgCanvas), side: THREE.BackSide });
+        scene.add(new THREE.Mesh(bgGeo, bgMat));
+
+        // Ambient & Directional Lights (Front + Back illumination)
+        scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight1.position.set(20, 20, 20);
+        scene.add(dirLight1);
+        const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight2.position.set(-20, -20, -20);
+        scene.add(dirLight2);
+
+        // Grid Helper for spatial reference
+        const gridHelper = new THREE.GridHelper(30, 30, 0xf59e0b, 0x334155);
+        gridHelper.position.y = -5;
+        scene.add(gridHelper);
+
+        // --- IMAGE MESH PLANES LOGIC ---
+        function addNewSpriteFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const aspectRatio = img.width / img.height;
+                    const baseHeight = 4.0;
+                    const baseWidth = baseHeight * aspectRatio;
+
+                    const texture = new THREE.Texture(img);
+                    texture.encoding = THREE.sRGBEncoding;
+                    texture.needsUpdate = true;
+
+                    const planeGeo = new THREE.PlaneGeometry(baseWidth, baseHeight);
+                    const planeMat = new THREE.MeshBasicMaterial({
+                        map: texture,
+                        transparent: true,
+                        side: THREE.DoubleSide
+                    });
+
+                    const meshPlane = new THREE.Mesh(planeGeo, planeMat);
+                    meshPlane.position.set((userSprites.length * 3) - 3, 0, 0);
+
+                    spritesGroup.add(meshPlane);
+
+                    const item = {
+                        id: Date.now(),
+                        type: 'image',
+                        name: file.name,
+                        meshObj: meshPlane,
+                        aspectRatio: aspectRatio,
+                        baseHeight: baseHeight,
+                        baseWidth: baseWidth,
+                        posX: meshPlane.position.x,
+                        posY: 0,
+                        posZ: 0,
+                        rotY: 0,
+                        scaleFactor: 1.0
+                    };
+
+                    userSprites.push(item);
+                    transformControls.attach(meshPlane);
+                    renderSpritesUIList();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
+        // --- WEBM VIDEO PLANES ---
+        function addNewVideoFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const objectURL = URL.createObjectURL(file);
+            const video = document.createElement('video');
+            video.src = objectURL;
+            video.preload = 'auto';
+            video.muted = true;
+            video.playsInline = true;
+            video.loop = false;
+
+            video.addEventListener('loadedmetadata', function onMetadata() {
+                video.removeEventListener('loadedmetadata', onMetadata);
+
+                if (!Number.isFinite(video.duration) || video.duration <= 0 ||
+                    !video.videoWidth || !video.videoHeight) {
+                    URL.revokeObjectURL(objectURL);
+                    alert('تعذر قراءة مدة الفيديو أو أبعاده. تأكد من أن ملف WebM سليم وله مدة محددة.');
+                    return;
+                }
+
+                const aspectRatio = video.videoWidth / video.videoHeight;
+                const baseHeight = 4.0;
+                const baseWidth = baseHeight * aspectRatio;
+
+                const texture = new THREE.VideoTexture(video);
+                texture.minFilter = THREE.LinearFilter;
+                texture.magFilter = THREE.LinearFilter;
+                texture.format = THREE.RGBAFormat;
+                texture.encoding = THREE.sRGBEncoding;
+
+                const material = new THREE.MeshBasicMaterial({
+                    map: texture,
+                    transparent: true,
+                    alphaTest: 0.1,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+
+                const mesh = new THREE.Mesh(
+                    new THREE.PlaneGeometry(baseWidth, baseHeight),
+                    material
+                );
+                mesh.position.set((userSprites.length * 3) - 3, 0, 0);
+                spritesGroup.add(mesh);
+
+                const item = {
+                    id: Date.now() + Math.random(),
+                    type: 'video',
+                    name: file.name,
+                    meshObj: mesh,
+                    video: video,
+                    videoTexture: texture,
+                    objectURL: objectURL,
+                    aspectRatio: aspectRatio,
+                    baseHeight: baseHeight,
+                    baseWidth: baseWidth,
+                    posX: mesh.position.x,
+                    posY: 0,
+                    posZ: 0,
+                    rotY: 0,
+                    scaleFactor: 1.0,
+                    timelineStart: 0,
+                    sourceStart: 0,
+                    playbackDuration: video.duration,
+                    previewStarted: false
+                };
+
+                video.pause();
+                video.currentTime = 0;
+                userSprites.push(item);
+                transformControls.attach(mesh);
+                renderSpritesUIList();
+                updateTotalDurationUI();
+            });
+
+            video.addEventListener('error', function () {
+                URL.revokeObjectURL(objectURL);
+                alert('تعذر تحميل ملف WebM. جرّب ملف WebM بترميز فيديو مدعوم مثل VP8 أو VP9.');
+            }, { once: true });
+
+            event.target.value = '';
+        }
+
+        function updateVideoSettings(id, field, value) {
+            const item = userSprites.find(s => s.id === id && s.type === 'video');
+            if (!item) return;
+
+            const number = Number(value);
+            if (!Number.isFinite(number)) return;
+
+            if (field === 'timelineStart') {
+                item.timelineStart = Math.max(0, number);
+            } else if (field === 'sourceStart') {
+                item.sourceStart = Math.max(0, Math.min(number, item.video.duration - 0.001));
+                item.playbackDuration = Math.max(
+                    0.05,
+                    item.playbackDuration || (item.video.duration - item.sourceStart)
+                );
+            } else if (field === 'playbackDuration') {
+                item.playbackDuration = Math.max(0.05, number);
+            }
+
+            item.previewStarted = false;
+            item.video.pause();
+            updateTotalDurationUI();
+        }
+
+        function getVideoSourceTime(item, projectTime) {
+            const sourceStart = Math.max(0, Math.min(item.sourceStart, item.video.duration));
+            const remainingSource = Math.max(0, item.video.duration - sourceStart);
+            const duration = Math.max(0.05, item.playbackDuration);
+            const elapsed = Math.max(0, projectTime - item.timelineStart);
+            const progress = Math.min(1, elapsed / duration);
+            return Math.min(item.video.duration, sourceStart + remainingSource * progress);
+        }
+
+        function waitForVideoData(video, timeoutMs = 8000) {
+            if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+                return Promise.resolve();
+            }
+
+            return new Promise((resolve, reject) => {
+                let finished = false;
+                const cleanup = () => {
+                    video.removeEventListener('loadeddata', check);
+                    video.removeEventListener('canplay', check);
+                    video.removeEventListener('error', onError);
+                    clearTimeout(timer);
+                };
+                const done = () => {
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+                    resolve();
+                };
+                const check = () => {
+                    if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) done();
+                };
+                const onError = () => {
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+                    reject(new Error(`تعذر فك ترميز الفيديو: ${video.currentSrc || video.src}`));
+                };
+                const timer = setTimeout(() => {
+                    check();
+                    if (!finished) {
+                        finished = true;
+                        cleanup();
+                        reject(new Error(`انتهت مهلة انتظار إطار الفيديو (${video.readyState})`));
+                    }
+                }, timeoutMs);
+
+                video.addEventListener('loadeddata', check);
+                video.addEventListener('canplay', check);
+                video.addEventListener('error', onError);
+                check();
+            });
+        }
+
+        function seekVideoToTime(video, targetTime, timeoutMs = 8000) {
+            const safeTarget = Math.max(0, Math.min(
+                targetTime,
+                Math.max(0, video.duration - (1 / Math.max(RENDER_FPS, 24)))
+            ));
+
+            if (Math.abs(video.currentTime - safeTarget) <= 0.004) {
+                if (video.readyState >= 2 && video.videoWidth > 0) {
+                    return Promise.resolve();
+                }
+                return waitForVideoData(video, timeoutMs);
+            }
+
+            return new Promise((resolve, reject) => {
+                let finished = false;
+                const cleanup = () => {
+                    video.removeEventListener('seeked', onSeeked);
+                    video.removeEventListener('error', onError);
+                    clearTimeout(timer);
+                };
+                const done = () => {
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+                    resolve();
+                };
+                const onSeeked = () => {
+                    if (video.readyState >= 2 && video.videoWidth > 0) {
+                        done();
+                    } else {
+                        waitForVideoData(video, timeoutMs).then(done, fail);
+                    }
+                };
+                const fail = error => {
+                    if (finished) return;
+                    finished = true;
+                    cleanup();
+                    reject(error);
+                };
+                const onError = () => fail(new Error(
+                    `حدث خطأ أثناء الانتقال إلى إطار الفيديو عند ${safeTarget.toFixed(3)} ثانية`
+                ));
+                const timer = setTimeout(() => {
+                    if (video.readyState >= 2 && video.videoWidth > 0 &&
+                        Math.abs(video.currentTime - safeTarget) < 0.08) {
+                        done();
+                    } else {
+                        fail(new Error(
+                            `تعذر الوصول إلى إطار الفيديو عند ${safeTarget.toFixed(3)} ثانية؛ ` +
+                            `readyState=${video.readyState}, currentTime=${video.currentTime.toFixed(3)}`
+                        ));
+                    }
+                }, timeoutMs);
+
+                video.addEventListener('seeked', onSeeked);
+                video.addEventListener('error', onError);
+                try {
+                    video.currentTime = safeTarget;
+                    if (Math.abs(video.currentTime - safeTarget) <= 0.004 &&
+                        video.readyState >= 2 && video.videoWidth > 0) {
+                        done();
+                    }
+                } catch (error) {
+                    fail(error);
+                }
+            });
+        }
+
+        async function seekVideoForRender(item, projectTime) {
+            const video = item.video;
+            const clipStart = item.timelineStart;
+            const clipEnd = clipStart + item.playbackDuration;
+
+            if (projectTime < clipStart) {
+                item.meshObj.visible = false;
+                video.pause();
+                return;
+            }
+
+            video.pause();
+            video.playbackRate = 1;
+
+            item.meshObj.visible = false;
+
+            const sourceTime = getVideoSourceTime(item, Math.min(projectTime, clipEnd));
+            await seekVideoToTime(video, sourceTime);
+            await waitForVideoData(video);
+
+            if (video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2) {
+                item.videoTexture.needsUpdate = true;
+                item.meshObj.visible = true;
+            } else {
+                throw new Error(`لم تتوفر صورة فيديو صالحة للعنصر: ${item.name}`);
+            }
+        }
+
+        function updateVideosForPreview(projectTime) {
+            userSprites.forEach(item => {
+                if (item.type !== 'video') return;
+
+                const video = item.video;
+                const start = item.timelineStart;
+                const end = start + item.playbackDuration;
+
+                if (projectTime < start) {
+                    item.meshObj.visible = false;
+                    video.pause();
+                    item.previewStarted = false;
+                    return;
+                }
+
+                item.meshObj.visible = true;
+
+                if (projectTime >= end) {
+                    video.pause();
+                    const lastTime = video.duration;
+                    if (Math.abs(video.currentTime - lastTime) > 0.04) {
+                        video.currentTime = lastTime;
+                    }
+                    item.previewStarted = false;
+                    return;
+                }
+
+                const sourceStart = Math.max(0, Math.min(item.sourceStart, video.duration));
+                const sourceRemaining = Math.max(0, video.duration - sourceStart);
+                const rate = sourceRemaining / Math.max(0.05, item.playbackDuration);
+                video.playbackRate = Math.max(0.0625, Math.min(16, rate));
+
+                if (!item.previewStarted) {
+                    video.pause();
+                    video.currentTime = sourceStart;
+                    item.previewStarted = true;
+                    video.play().catch(err => console.warn('WebM preview playback failed:', err));
+                }
+            });
+        }
+
+        async function updateVideosForRender(projectTime) {
+            for (const item of userSprites) {
+                if (item.type === 'video') {
+                    await seekVideoForRender(item, projectTime);
+                }
+            }
+        }
+
+        // --- GLB / GLTF 3D MODELS LOADING LOGIC ---
+        function addNewGLBFromFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                gltfLoader.parse(contents, '', function(gltf) {
+                    const model = gltf.scene;
+                    
+                    const bbox = new THREE.Box3().setFromObject(model);
+                    const size = bbox.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const targetSize = 4.0;
+                    const normScale = maxDim > 0 ? (targetSize / maxDim) : 1.0;
+                    
+                    model.scale.set(normScale, normScale, normScale);
+
+                    const center = bbox.getCenter(new THREE.Vector3());
+                    model.position.sub(center.multiplyScalar(normScale));
+
+                    const containerGroup = new THREE.Group();
+                    containerGroup.add(model);
+                    containerGroup.position.set((userSprites.length * 3) - 3, 0, 0);
+
+                    spritesGroup.add(containerGroup);
+
+                    const item = {
+                        id: Date.now(),
+                        type: 'glb',
+                        name: file.name,
+                        meshObj: containerGroup,
+                        posX: containerGroup.position.x,
+                        posY: 0,
+                        posZ: 0,
+                        rotY: 0,
+                        scaleFactor: 1.0
+                    };
+
+                    userSprites.push(item);
+                    transformControls.attach(containerGroup);
+                    renderSpritesUIList();
+                }, function(error) {
+                    console.error("خطأ في تحميل ملف GLB:", error);
+                    alert("تعذر قراءة ملف GLB/GLTF. يرجى التأكد من صحة الملف.");
+                });
+            };
+            reader.readAsArrayBuffer(file);
+            event.target.value = '';
+        }
+
+        function selectSpriteForTransform(id) {
+            const item = userSprites.find(s => s.id === id);
+            if (item) {
+                transformControls.attach(item.meshObj);
+                highlightSpriteCard(id);
+            }
+        }
+
+        function highlightSpriteCard(id) {
+            document.querySelectorAll('.sprite-card').forEach(c => c.classList.remove('border-amber-500', 'bg-slate-800'));
+            const activeCard = document.getElementById(`sprite-card-${id}`);
+            if (activeCard) {
+                activeCard.classList.add('border-amber-500', 'bg-slate-800');
+            }
+        }
+
+        function updateSpriteUIInputs(id) {
+            const item = userSprites.find(s => s.id === id);
+            if (!item) return;
+
+            const xInput = document.getElementById(`sprite-x-${id}`);
+            const yInput = document.getElementById(`sprite-y-${id}`);
+            const zInput = document.getElementById(`sprite-z-${id}`);
+            const rotInput = document.getElementById(`sprite-roty-${id}`);
+            const scaleInput = document.getElementById(`sprite-scale-${id}`);
+
+            if (xInput) xInput.value = item.posX.toFixed(1);
+            if (yInput) yInput.value = item.posY.toFixed(1);
+            if (zInput) zInput.value = item.posZ.toFixed(1);
+            if (rotInput) rotInput.value = Math.round(item.rotY * 180 / Math.PI);
+            if (scaleInput) scaleInput.value = item.scaleFactor.toFixed(2);
+        }
+
+        function updateSpriteTransform(id) {
+            const item = userSprites.find(s => s.id === id);
+            if (!item) return;
+
+            item.posX = parseFloat(document.getElementById(`sprite-x-${id}`).value);
+            item.posY = parseFloat(document.getElementById(`sprite-y-${id}`).value);
+            item.posZ = parseFloat(document.getElementById(`sprite-z-${id}`).value);
+            item.rotY = parseFloat(document.getElementById(`sprite-roty-${id}`).value) * Math.PI / 180;
+            item.scaleFactor = parseFloat(document.getElementById(`sprite-scale-${id}`).value);
+
+            // Apply position & rotation
+            item.meshObj.position.set(item.posX, item.posY, item.posZ);
+            item.meshObj.rotation.y = item.rotY;
+
+            // Apply scale maintaining aspect ratio correctly
+            if (item.type === 'glb') {
+                item.meshObj.scale.set(item.scaleFactor, item.scaleFactor, item.scaleFactor);
+            } else {
+                item.meshObj.scale.set(item.scaleFactor, item.scaleFactor, 1);
+            }
+        }
+
+        function removeSprite(id) {
+            const index = userSprites.findIndex(s => s.id === id);
+            if (index !== -1) {
+                if (transformControls.object === userSprites[index].meshObj) {
+                    transformControls.detach();
+                }
+                const removed = userSprites[index];
+                spritesGroup.remove(removed.meshObj);
+                if (removed.type === 'video') {
+                    removed.video.pause();
+                    removed.video.removeAttribute('src');
+                    removed.video.load();
+                    removed.videoTexture.dispose();
+                    removed.meshObj.geometry.dispose();
+                    removed.meshObj.material.dispose();
+                    URL.revokeObjectURL(removed.objectURL);
+                }
+                userSprites.splice(index, 1);
+                renderSpritesUIList();
+                updateTotalDurationUI();
+            }
+        }
+
+        function renderSpritesUIList() {
+            const listContainer = document.getElementById('sprites-list');
+            if (userSprites.length === 0) {
+                listContainer.innerHTML = `<p class="text-xs text-slate-500 italic text-center py-2">لا توجد عناصر مضافة بعد</p>`;
+                return;
+            }
+
+            listContainer.innerHTML = '';
+            userSprites.forEach(item => {
+                const isAttached = transformControls.object === item.meshObj;
+                const div = document.createElement('div');
+                div.id = `sprite-card-${item.id}`;
+                div.className = `sprite-card bg-slate-800/90 p-2.5 rounded-lg border text-xs space-y-2 cursor-pointer transition-all ${isAttached ? 'border-amber-500 bg-slate-800' : 'border-slate-700'}`;
+                div.onclick = (e) => {
+                    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+                        selectSpriteForTransform(item.id);
+                    }
+                };
+                
+                const icon = item.type === 'glb' ? '📦' : (item.type === 'video' ? '🎞️' : '🖼️');
+                const badgeColor = item.type === 'glb' ? 'text-sky-300' : (item.type === 'video' ? 'text-emerald-300' : 'text-amber-300');
+
+                div.innerHTML = `
+                    <div class="flex items-center justify-between border-b border-slate-700/60 pb-1">
+                        <span class="font-bold ${badgeColor} truncate max-w-[170px]" onclick="selectSpriteForTransform(${item.id})">${icon} ${item.name}</span>
+                        <button onclick="removeSprite(${item.id})" class="text-red-400 hover:text-red-300 font-bold px-1">✕</button>
+                    </div>
+                    ${item.type === 'video' ? `
+                        <div class="grid grid-cols-2 gap-2 border-b border-slate-700/60 pb-2 text-[10px]">
+                            <div>
+                                <label class="text-emerald-300 block mb-0.5">موضع الفيديو في المشروع (ث):</label>
+                                <input type="number" min="0" step="0.1" value="${item.timelineStart.toFixed(2)}"
+                                    onchange="updateVideoSettings(${item.id}, 'timelineStart', this.value)"
+                                    class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-center text-emerald-300">
+                            </div>
+                            <div>
+                                <label class="text-emerald-300 block mb-0.5">بداية الفيديو المصدر (ث):</label>
+                                <input type="number" min="0" max="${Math.max(0, item.video.duration - 0.01).toFixed(2)}" step="0.1"
+                                    value="${item.sourceStart.toFixed(2)}"
+                                    onchange="updateVideoSettings(${item.id}, 'sourceStart', this.value)"
+                                    class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-center text-emerald-300">
+                            </div>
+                            <div class="col-span-2">
+                                <label class="text-emerald-300 block mb-0.5">مدة تشغيله داخل المشروع حتى آخر فريم (ث):</label>
+                                <input type="number" min="0.05" step="0.1" value="${item.playbackDuration.toFixed(2)}"
+                                    onchange="updateVideoSettings(${item.id}, 'playbackDuration', this.value)"
+                                    class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-1 text-center text-emerald-300">
+                                <p class="text-slate-500 mt-1">بعد انتهاء هذه المدة يثبت الفيديو على آخر فريم.</p>
+                            </div>
+                        </div>
+                    ` : ''}
+                    <div class="grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <label class="text-slate-400">X (أفقي):</label>
+                            <input type="range" id="sprite-x-${item.id}" min="-20" max="20" step="0.2" value="${item.posX.toFixed(1)}" oninput="updateSpriteTransform(${item.id})" class="w-full accent-amber-500">
+                        </div>
+                        <div>
+                            <label class="text-slate-400">Y (رأسي):</label>
+                            <input type="range" id="sprite-y-${item.id}" min="-15" max="15" step="0.2" value="${item.posY.toFixed(1)}" oninput="updateSpriteTransform(${item.id})" class="w-full accent-amber-500">
+                        </div>
+                        <div>
+                            <label class="text-slate-400">Z (عمق):</label>
+                            <input type="range" id="sprite-z-${item.id}" min="-20" max="20" step="0.2" value="${item.posZ.toFixed(1)}" oninput="updateSpriteTransform(${item.id})" class="w-full accent-amber-500">
+                        </div>
+                        <div>
+                            <label class="text-slate-400">تدوير (حول Y):</label>
+                            <input type="range" id="sprite-roty-${item.id}" min="0" max="360" step="5" value="${Math.round(item.rotY * 180 / Math.PI)}" oninput="updateSpriteTransform(${item.id})" class="w-full accent-amber-500">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="text-slate-400">التكبير الحجمي (Scale):</label>
+                            <input type="range" id="sprite-scale-${item.id}" min="0.1" max="5" step="0.05" value="${item.scaleFactor.toFixed(2)}" oninput="updateSpriteTransform(${item.id})" class="w-full accent-amber-500">
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(div);
+            });
+        }
+
+        // --- CAMERA KEYFRAMES & TRANSITION TIMING SYSTEM ---
+        function captureCurrentCameraKeyframe() {
+            const snapshot = {
+                id: Date.now(),
+                transitionDuration: 2.5,
+                pauseDuration: 1.0,
+                position: camera.position.clone(),
+                target: controls.target.clone()
+            };
+
+            cameraKeyframes.push(snapshot);
+            renderKeyframesUIList();
+        }
+
+        // Recapture current camera position and target for a specific keyframe
+        function updateCameraKeyframePosition(id) {
+            const kf = cameraKeyframes.find(k => k.id === id);
+            if (kf) {
+                kf.position.copy(camera.position);
+                kf.target.copy(controls.target);
+                renderKeyframesUIList();
+            }
+        }
+
+        function removeKeyframe(id) {
+            const idx = cameraKeyframes.findIndex(k => k.id === id);
+            if (idx !== -1) {
+                cameraKeyframes.splice(idx, 1);
+                renderKeyframesUIList();
+            }
+        }
+
+        function updateKeyframeDuration(id, durationVal) {
+            const kf = cameraKeyframes.find(k => k.id === id);
+            if (kf) {
+                kf.transitionDuration = Math.max(0.2, parseFloat(durationVal) || 0);
+                updateTotalDurationUI();
+            }
+        }
+
+        function updateKeyframePause(id, pauseVal) {
+            const kf = cameraKeyframes.find(k => k.id === id);
+            if (kf) {
+                kf.pauseDuration = Math.max(0, parseFloat(pauseVal) || 0);
+                updateTotalDurationUI();
+            }
+        }
+
+        function jumpToKeyframe(id) {
+            const kf = cameraKeyframes.find(k => k.id === id);
+            if (kf) {
+                camera.position.copy(kf.position);
+                controls.target.copy(kf.target);
+                controls.update();
+            }
+        }
+
+        function calculateSequenceTimeline() {
+            let total = 0;
+            const timeline = [];
+            for (let i = 0; i < cameraKeyframes.length; i++) {
+                const kf = cameraKeyframes[i];
+                const transition = (i === 0) ? 0 : (kf.transitionDuration || 0);
+                const pause = kf.pauseDuration || 0;
+
+                const moveStartTime = total;
+                const moveEndTime = total + transition;
+                const pauseEndTime = moveEndTime + pause;
+
+                total = pauseEndTime;
+
+                timeline.push({
+                    keyframe: kf,
+                    moveStartTime: moveStartTime,
+                    moveEndTime: moveEndTime,
+                    pauseEndTime: pauseEndTime,
+                    transitionDuration: transition,
+                    pauseDuration: pause
+                });
+            }
+            return { timeline, totalDuration: total };
+        }
+
+        function calculateProjectDuration() {
+            const cameraDuration = calculateSequenceTimeline().totalDuration;
+            const videoDuration = userSprites.reduce((max, item) => {
+                if (item.type !== 'video') return max;
+                return Math.max(max, item.timelineStart + item.playbackDuration);
+            }, 0);
+            return Math.max(cameraDuration, videoDuration);
+        }
+
+        function updateTotalDurationUI() {
+            const totalDuration = calculateProjectDuration();
+            document.getElementById('total-duration-label').innerText = `المجموع: ${totalDuration.toFixed(1)} ثانية`;
+        }
+
+        function renderKeyframesUIList() {
+            const listContainer = document.getElementById('keyframes-list');
+            if (cameraKeyframes.length === 0) {
+                listContainer.innerHTML = `<p class="text-xs text-slate-500 italic text-center py-2">لا توجد مواضع كاميرا مسجلة</p>`;
+                updateTotalDurationUI();
+                return;
+            }
+
+            listContainer.innerHTML = '';
+            cameraKeyframes.forEach((kf, index) => {
+                const div = document.createElement('div');
+                div.className = "bg-slate-800/90 p-2.5 rounded-lg border border-slate-700 text-xs space-y-2";
+                
+                const isFirst = index === 0;
+
+                // Formatted position and target info
+                const posX = kf.position.x.toFixed(1);
+                const posY = kf.position.y.toFixed(1);
+                const posZ = kf.position.z.toFixed(1);
+                const targetX = kf.target.x.toFixed(1);
+                const targetY = kf.target.y.toFixed(1);
+                const targetZ = kf.target.z.toFixed(1);
+
+                div.innerHTML = `
+                    <div class="flex items-center justify-between border-b border-slate-700/60 pb-1.5">
+                        <div class="flex items-center gap-1.5">
+                            <button onclick="jumpToKeyframe(${kf.id})" class="text-amber-400 hover:text-amber-300 font-bold text-xs bg-slate-900 px-2 py-0.5 rounded border border-slate-700 flex items-center gap-1" title="معاينة الموضع">
+                                📸 موضع ${index + 1}
+                            </button>
+                            <button onclick="updateCameraKeyframePosition(${kf.id})" class="text-[10px] bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-slate-950 font-bold px-1.5 py-0.5 rounded border border-amber-500/40 transition-all" title="التقاط وتحديث بالموقع الحالي للكاميرا">
+                                🎯 إعادة التقاط
+                            </button>
+                        </div>
+                        <button onclick="removeKeyframe(${kf.id})" class="text-red-400 hover:text-red-300 font-bold text-xs px-1">✕</button>
+                    </div>
+
+                    <!-- Camera Position & Direction Details -->
+                    <div class="bg-slate-900/60 p-1.5 rounded border border-slate-800/80 text-[10px] space-y-1 font-mono">
+                        <div class="flex justify-between text-slate-300">
+                            <span class="text-slate-400">الموقع (Pos):</span>
+                            <span>X:${posX} | Y:${posY} | Z:${posZ}</span>
+                        </div>
+                        <div class="flex justify-between text-slate-300">
+                            <span class="text-slate-400">الاتجاه (Target):</span>
+                            <span>X:${targetX} | Y:${targetY} | Z:${targetZ}</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 text-[10px]">
+                        ${!isFirst ? `
+                            <div>
+                                <label class="text-slate-400 block mb-0.5">زمن الانتقال (ث):</label>
+                                <input type="number" min="0.1" max="20" step="0.5" value="${kf.transitionDuration}" onchange="updateKeyframeDuration(${kf.id}, this.value)" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-center text-amber-400 font-bold">
+                            </div>
+                        ` : `<div class="text-slate-500 flex items-center">موضع البداية</div>`}
+                        <div>
+                            <label class="text-slate-400 block mb-0.5">زمن التوقف (ث):</label>
+                            <input type="number" min="0" max="20" step="0.5" value="${kf.pauseDuration !== undefined ? kf.pauseDuration : 1.0}" onchange="updateKeyframePause(${kf.id}, this.value)" class="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-center text-sky-400 font-bold">
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(div);
+            });
+
+            updateTotalDurationUI();
+        }
+
+        // Initialize Initial Camera Keyframe
+        cameraKeyframes.push({
+            id: 1,
+            transitionDuration: 0,
+            pauseDuration: 1.0,
+            position: defaultCamPosition.clone(),
+            target: defaultCamTarget.clone()
+        });
+        renderKeyframesUIList();
+
+        // Evaluate Camera Position at Time (t) in timeline
+        function evaluateCameraAtTimelineTime(t) {
+            if (cameraKeyframes.length === 0) return;
+            if (cameraKeyframes.length === 1) {
+                camera.position.copy(cameraKeyframes[0].position);
+                controls.target.copy(cameraKeyframes[0].target);
+                return;
+            }
+
+            const { timeline } = calculateSequenceTimeline();
+
+            if (t <= 0) {
+                camera.position.copy(timeline[0].keyframe.position);
+                controls.target.copy(timeline[0].keyframe.target);
+                return;
+            }
+
+            const lastSegment = timeline[timeline.length - 1];
+            if (t >= lastSegment.pauseEndTime) {
+                camera.position.copy(lastSegment.keyframe.position);
+                controls.target.copy(lastSegment.keyframe.target);
+                return;
+            }
+
+            for (let i = 0; i < timeline.length; i++) {
+                const seg = timeline[i];
+                if (t >= seg.moveStartTime && t <= seg.pauseEndTime) {
+                    if (t < seg.moveEndTime) {
+                        const prevKf = timeline[i - 1].keyframe;
+                        const currKf = seg.keyframe;
+                        const linearFactor = (t - seg.moveStartTime) / seg.transitionDuration;
+                        
+                        // Cubic Smoothstep Easing
+                        const smoothFactor = linearFactor * linearFactor * (3 - 2 * linearFactor);
+
+                        camera.position.lerpVectors(prevKf.position, currKf.position, smoothFactor);
+                        controls.target.lerpVectors(prevKf.target, currKf.target, smoothFactor);
+                    } else {
+                        camera.position.copy(seg.keyframe.position);
+                        controls.target.copy(seg.keyframe.target);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // --- CAMERA BOUNDARY & ADAPTIVE FITTING LOGIC ---
+        function updateViewportDimensions() {
+            const wrapper = document.getElementById('viewport-wrapper');
+            const maxW = wrapper.clientWidth - 40;
+            const maxH = wrapper.clientHeight - 40;
+
+            let targetW = maxW;
+            let targetH = maxH;
+            let aspectVal = 16 / 9;
+
+            if (currentAspect === '16:9') aspectVal = 16 / 9;
+            else if (currentAspect === '9:16') aspectVal = 9 / 16;
+            else if (currentAspect === '1:1') aspectVal = 1 / 1;
+
+            if (maxW / maxH > aspectVal) {
+                targetW = maxH * aspectVal;
+                targetH = maxH;
+            } else {
+                targetW = maxW;
+                targetH = maxW / aspectVal;
+            }
+
+            container.style.width = `${Math.floor(targetW)}px`;
+            container.style.height = `${Math.floor(targetH)}px`;
+
+            renderer.setSize(targetW, targetH);
+            camera.aspect = aspectVal;
+
+            if (currentFitMode === 'contain') {
+                const minDimension = Math.min(aspectVal, 1.0);
+                camera.fov = BASE_FOV / minDimension;
+            } else {
+                camera.fov = BASE_FOV;
+            }
+
+            camera.updateProjectionMatrix();
+        }
+
+        function setAspectRatio(aspect) {
+            currentAspect = aspect;
+            document.querySelectorAll('.ratio-btn').forEach(btn => {
+                btn.className = "ratio-btn bg-slate-800 text-slate-300 hover:bg-slate-700 py-1.5 text-xs rounded-lg transition-all border border-slate-700";
+            });
+            const activeBtn = document.getElementById(`btn-${aspect.replace(':', '-')}`);
+            if (activeBtn) {
+                activeBtn.className = "ratio-btn bg-amber-500 text-slate-950 font-bold py-1.5 text-xs rounded-lg transition-all shadow";
+            }
+            updateViewportDimensions();
+        }
+
+        function updateCameraFitting() {
+            currentFitMode = document.getElementById('fit-mode-select').value;
+            updateViewportDimensions();
+        }
+
+        function toggleCameraGuide(visible) {
+            document.getElementById('camera-guide').style.display = visible ? 'flex' : 'none';
+        }
+
+        window.addEventListener('resize', updateViewportDimensions);
+
+        // --- SEQUENCE PREVIEW ENGINE ---
+        function playCameraSequencePreview() {
+            if (cameraKeyframes.length < 2 && !userSprites.some(s => s.type === 'video')) return;
+            isSequencePlaying = true;
+            sequenceStartTime = performance.now() / 1000;
+            userSprites.forEach(item => {
+                if (item.type === 'video') {
+                    item.video.pause();
+                    item.previewStarted = false;
+                    item.meshObj.visible = false;
+                }
+            });
+        }
+
+        // --- REAL-TIME RENDER LOOP ---
+        function studioLoop() {
+            if (!isRendering) {
+                if (isSequencePlaying) {
+                    transformControls.detach();
+                    const currentTime = performance.now() / 1000;
+                    const elapsedTime = currentTime - sequenceStartTime;
+                    const totalDuration = calculateProjectDuration();
+
+                    if (elapsedTime <= totalDuration) {
+                        if (cameraKeyframes.length) evaluateCameraAtTimelineTime(elapsedTime);
+                        updateVideosForPreview(elapsedTime);
+                    } else {
+                        isSequencePlaying = false;
+                        userSprites.forEach(item => {
+                            if (item.type === 'video') item.video.pause();
+                        });
+                    }
+                }
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            requestAnimationFrame(studioLoop);
+        }
+
+        // --- DETERMINISTIC EXPORT ENGINE (VIDEO RENDERING) ---
+        async function startDeterministicRender() {
+            if (isRendering) return;
+
+            const totalDuration = calculateProjectDuration();
+            const hasCameraMove = cameraKeyframes.length >= 2;
+            const hasVideo = userSprites.some(s => s.type === 'video');
+            if (totalDuration <= 0 || (!hasCameraMove && !hasVideo)) {
+                alert("أضف حركة كاميرا أو فيديو WebM واحداً على الأقل قبل التصدير.");
+                return;
+            }
+
+            transformControls.detach();
+            isRendering = true;
+            isSequencePlaying = false;
+
+            const progressContainer = document.getElementById('render-progress-container');
+            const progressBar = document.getElementById('render-progress-bar');
+            const progressPercentage = document.getElementById('render-percentage');
+            const statusText = document.getElementById('render-status-text');
+            const renderBtn = document.getElementById('render-btn');
+            const guideElement = document.getElementById('camera-guide');
+
+            progressContainer.classList.remove('hidden');
+            renderBtn.disabled = true;
+            renderBtn.classList.add('opacity-50');
+
+            const originalWidth = container.clientWidth;
+            const originalHeight = container.clientHeight;
+            const guideWasVisible = guideElement.style.display !== 'none';
+            let renderSucceeded = false;
+
+            try {
+                let hdWidth = 1920;
+                let hdHeight = 1080;
+
+                if (currentAspect === '9:16') {
+                    hdWidth = 1080;
+                    hdHeight = 1920;
+                } else if (currentAspect === '1:1') {
+                    hdWidth = 1080;
+                    hdHeight = 1080;
+                }
+
+                renderer.setSize(hdWidth, hdHeight, false);
+                guideElement.style.display = 'none';
+
+                const totalFrames = Math.ceil(totalDuration * RENDER_FPS) + 1;
+                const videoWriter = new WebMWriter({
+                    quality: 0.98,
+                    frameRate: RENDER_FPS
+                });
+
+                statusText.innerText = "جاري رندر الحركة إطاراً بإطار...";
+
+                for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+                    const frameTime = frameIndex / RENDER_FPS;
+
+                    if (cameraKeyframes.length) evaluateCameraAtTimelineTime(frameTime);
+                    await updateVideosForRender(frameTime);
+
+                    controls.update();
+                    renderer.render(scene, camera);
+                    videoWriter.addFrame(renderer.domElement);
+
+                    const percent = Math.floor(((frameIndex + 1) / totalFrames) * 100);
+                    progressBar.style.width = `${percent}%`;
+                    progressPercentage.innerText = `${percent}%`;
+                    statusText.innerText = `جاري الرندر... ${frameTime.toFixed(2)} ثانية`;
+
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+
+                statusText.innerText = "جاري تجميع فيديو الانتقالات النهائي...";
+                const blob = await videoWriter.complete();
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `camera-montage-${currentAspect.replace(':', 'x')}-${Date.now()}.webm`;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 30000);
+
+                statusText.innerText = "تم تصدير فيديو المونتاج بنجاح! 🎉";
+                renderSucceeded = true;
+            } catch (error) {
+                console.error('Montage export failed:', error);
+                statusText.innerText = `توقف التصدير: ${error.message}`;
+                alert(`توقف التصدير بسبب مشكلة في أحد الفيديوهات:\n${error.message}`);
+            } finally {
+                renderer.setSize(originalWidth, originalHeight);
+                if (guideWasVisible) guideElement.style.display = 'flex';
+
+                userSprites.forEach(item => {
+                    if (item.type === 'video') item.video.pause();
+                });
+
+                renderBtn.disabled = false;
+                renderBtn.classList.remove('opacity-50');
+                isRendering = false;
+
+                if (renderSucceeded) {
+                    setTimeout(() => progressContainer.classList.add('hidden'), 2500);
+                }
+            }
+        }
+
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            updateViewportDimensions();
+            studioLoop();
+        };
+    </script>
+</body>
+</html>
